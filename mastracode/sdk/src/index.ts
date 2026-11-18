@@ -926,7 +926,21 @@ export async function createMastraCodeAgentController(config?: MastraCodeConfig)
   // MCP
   const mcpManager = config?.disableMcp
     ? undefined
-    : createMcpManager(project.rootPath, configDir, config?.mcpServers, globalSettings.mcp);
+    : createMcpManager(project.rootPath, configDir, config?.mcpServers, globalSettings.mcp, {
+        onEvent: async (server, occurrence) => {
+          if (!activeSession) throw new Error(`no active session to receive MCP event "${occurrence.name}"`);
+          await activeSession.sendSignal(
+            {
+              type: 'notification',
+              tagName: 'notification',
+              contents: JSON.stringify(occurrence.data),
+              attributes: { source: `mcp:${server}`, kind: occurrence.name, timestamp: occurrence.timestamp },
+              metadata: { mcpEvent: { server, eventId: occurrence.eventId, name: occurrence.name } },
+            },
+            { requireDelivery: true },
+          ).accepted;
+        },
+      });
 
   // Hooks
   const hookManager = config?.disableHooks

@@ -305,6 +305,12 @@ export function validateConfig(raw: unknown): McpConfig {
 
   for (const [name, entry] of Object.entries(rawServers)) {
     const classification = classifyServerEntry(entry);
+    const eventsResult = parseEventsConfig((entry as Record<string, unknown> | null)?.events);
+    if (eventsResult.reason) {
+      skippedServers.push({ name, reason: eventsResult.reason });
+      continue;
+    }
+    const events = eventsResult.events ? { events: eventsResult.events } : {};
 
     if (classification.kind === 'stdio') {
       const e = entry as Record<string, unknown>;
@@ -313,6 +319,7 @@ export function validateConfig(raw: unknown): McpConfig {
         args: Array.isArray(e.args) ? (e.args as string[]) : undefined,
         env:
           typeof e.env === 'object' && e.env !== null ? expandEnvValues(e.env as Record<string, unknown>) : undefined,
+        ...events,
       };
     } else if (classification.kind === 'http') {
       const e = entry as Record<string, unknown>;
@@ -328,6 +335,7 @@ export function validateConfig(raw: unknown): McpConfig {
             ? expandHeaderEnvVars(e.headers as Record<string, unknown>)
             : undefined,
         oauth: oauthResult.config,
+        ...events,
       };
     } else {
       skippedServers.push({ name, reason: classification.reason! });
@@ -342,6 +350,15 @@ export function validateConfig(raw: unknown): McpConfig {
     result.skippedServers = skippedServers;
   }
   return result;
+}
+
+function parseEventsConfig(raw: unknown): { events?: true | string[]; reason?: string } {
+  if (raw === undefined || raw === false) return {};
+  if (raw === true) return { events: true };
+  if (Array.isArray(raw) && raw.length > 0 && raw.every(n => typeof n === 'string' && n.length > 0)) {
+    return { events: raw as string[] };
+  }
+  return { reason: 'Invalid events config: expected true or a non-empty array of event names' };
 }
 
 function parseOAuthConfig(raw: unknown): { config?: McpHttpOAuthConfig; reason?: string } {

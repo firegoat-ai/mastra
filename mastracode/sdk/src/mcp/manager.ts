@@ -7,6 +7,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { dirname, join } from 'node:path';
 import type {
   MCPClient,
+  MCPEventOccurrence,
+  MCPEventSubscription,
   MCPServerSettledResult,
   MastraMCPServerDefinition,
   OAuthClientInformation,
@@ -225,7 +227,11 @@ export function createMcpManager(
   configDirName = DEFAULT_CONFIG_DIR,
   extraServers?: Record<string, McpServerConfig>,
   externalDiscovery?: ExternalMcpDiscoveryOptions,
-  options?: { discoveryTimeoutMs?: number },
+  options?: {
+    discoveryTimeoutMs?: number;
+    /** Receives each occurrence from servers that opt in with `events`. */
+    onEvent?: (serverName: string, occurrence: MCPEventOccurrence) => Promise<void>;
+  },
 ): McpManager {
   const discoveryTimeoutMs = options?.discoveryTimeoutMs ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS;
   /** Merge programmatic servers into a base config (highest priority). */
@@ -482,6 +488,68 @@ export function createMcpManager(
     return status;
   }
 
+  const eventSubscriptions = new Map<string, MCPEventSubscription[]>();
+
+  function cancelEventSubscriptions(name: string): void {
+    for (const subscription of eventSubscriptions.get(name) ?? []) void subscription.cancel();
+    eventSubscriptions.delete(name);
+  }
+
+  /** Apply a connect outcome and, once connected, follow the server's tool list and opted-in events. */
+  function applyAndWatch(
+    name: string,
+    cfg: McpServerConfig,
+    outcome: ServerOutcome,
+    attempt: object,
+    attemptClient: MCPClient,
+  ): McpServerStatus {
+    const status = applyServerResult(name, cfg, outcome);
+    if (!status.connected) return status;
+
+    const refreshTools = () =>
+      attemptClient.listToolsetsWithErrors({
+        serverNames: [name],
+        onServerSettled: (_, result) => {
+          if (isCurrent(name, attempt, attemptClient)) applyServerResult(name, cfg, outcomeOf(result));
+        },
+      });
+    const warn = (what: string) => (error: unknown) => console.warn(`MCP server "${name}": ${what}:`, error);
+    attemptClient.tools
+      .onListChanged(name, () => void refreshTools().catch(warn('failed to refresh tools')))
+      .catch(warn('failed to watch tool list changes'));
+
+    cancelEventSubscriptions(name);
+    if (cfg.events) subscribeToEvents(name, cfg.events, attemptClient).catch(warn('failed to subscribe to events'));
+    return status;
+  }
+
+  async function subscribeToEvents(name: string, wanted: true | string[], attemptClient: MCPClient): Promise<void> {
+    const onEvent = options?.onEvent;
+    if (!onEvent) throw new Error('"events" is set but this Mastra Code host has no MCP event handler');
+    const subscriptions: MCPEventSubscription[] = [];
+    eventSubscriptions.set(name, subscriptions);
+
+    const offered = (await attemptClient.events.list(name)).map(descriptor => descriptor.name);
+    const missing = wanted === true ? [] : wanted.filter(event => !offered.includes(event));
+    if (missing.length > 0) {
+      throw new Error(`server does not offer events ${missing.join(', ')} (offers: ${offered.join(', ') || 'none'})`);
+    }
+
+    for (const event of wanted === true ? offered : wanted) {
+      const subscription = await attemptClient.events.subscribe(name, event);
+      if (eventSubscriptions.get(name) !== subscriptions) return void subscription.cancel();
+      subscriptions.push(subscription);
+      subscription.onError(error => console.warn(`MCP server "${name}" event "${event}":`, error.message));
+      void (async () => {
+        for await (const occurrence of subscription) {
+          await onEvent(name, occurrence).catch(error =>
+            console.warn(`MCP server "${name}": failed to deliver event "${event}" (${occurrence.eventId}):`, error),
+          );
+        }
+      })().catch(error => console.warn(`MCP server "${name}": event "${event}" subscription ended:`, error));
+    }
+  }
+
   async function connectAndCollectTools(): Promise<void> {
     setDisabledStatuses();
 
@@ -518,7 +586,7 @@ export function createMcpManager(
     const record = (name: string, outcome: ServerOutcome): boolean => {
       if (!isCurrent(name, attempts.get(name)!, attemptClient)) return false;
       captureStderr(name);
-      applyServerResult(name, servers[name]!, outcome);
+      applyAndWatch(name, servers[name]!, outcome, attempts.get(name)!, attemptClient);
       return true;
     };
 
@@ -590,8 +658,8 @@ export function createMcpManager(
     const attempt = {};
     connectAttempts.set(name, attempt);
 
-    // Remove old tools for this server
     removeServerTools(name);
+    cancelEventSubscriptions(name);
 
     // Clear old logs and mark as connecting
     stderrLogs.delete(name);
@@ -619,7 +687,7 @@ export function createMcpManager(
     })().catch((error): ServerOutcome => ({ error: error instanceof Error ? error.message : String(error) }));
 
     const record = (outcome: ServerOutcome): McpServerStatus | undefined =>
-      isCurrent(name, attempt, attemptClient) ? applyServerResult(name, cfg, outcome) : undefined;
+      isCurrent(name, attempt, attemptClient) ? applyAndWatch(name, cfg, outcome, attempt, attemptClient) : undefined;
     const superseded = (): McpServerStatus => ({
       ...(serverStatuses.get(name) ?? {
         name,
@@ -651,6 +719,7 @@ export function createMcpManager(
 
   async function disconnect(): Promise<void> {
     connectAttempts = new Map();
+    for (const name of [...eventSubscriptions.keys()]) cancelEventSubscriptions(name);
     if (client) {
       const closing = client;
       client = null;
