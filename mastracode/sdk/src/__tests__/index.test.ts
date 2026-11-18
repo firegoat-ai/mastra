@@ -1429,16 +1429,10 @@ describe('createMastraCode', () => {
     expect(agentControllerConfig?.initialState?.configDir).toBe('.acme-code');
     expect(getDynamicMemoryMock).not.toHaveBeenCalled();
     expect(getStorageConfigMock).toHaveBeenCalledWith(projectPath, expect.anything(), '.acme-code');
-    expect(createMcpManagerMock).toHaveBeenCalledWith(
-      projectPath,
-      '.acme-code',
-      undefined,
-      {
-        claudeCodeGlobal: false,
-        codexGlobal: false,
-      },
-      { onEvent: expect.any(Function) },
-    );
+    expect(createMcpManagerMock).toHaveBeenCalledWith(projectPath, '.acme-code', undefined, {
+      claudeCodeGlobal: false,
+      codexGlobal: false,
+    });
     expect(hookManagerConstructorMock).toHaveBeenCalledWith(
       projectPath,
       'session-init',
@@ -1819,16 +1813,10 @@ describe('createMastraCode', () => {
 
     expect(getResourceIdOverrideMock).toHaveBeenCalledWith(projectPath, '.acme-code');
     expect(getStorageConfigMock).toHaveBeenCalledWith(projectPath, expect.anything(), '.acme-code');
-    expect(createMcpManagerMock).toHaveBeenCalledWith(
-      projectPath,
-      '.acme-code',
-      undefined,
-      {
-        claudeCodeGlobal: false,
-        codexGlobal: false,
-      },
-      { onEvent: expect.any(Function) },
-    );
+    expect(createMcpManagerMock).toHaveBeenCalledWith(projectPath, '.acme-code', undefined, {
+      claudeCodeGlobal: false,
+      codexGlobal: false,
+    });
     expect(hookManagerConstructorMock).toHaveBeenCalledWith(
       projectPath,
       'session-init',
@@ -1867,16 +1855,10 @@ describe('createMastraCode', () => {
 
     await createMastraCode({ cwd, configDir: '.acme-code', mcpServers });
 
-    expect(createMcpManagerMock).toHaveBeenCalledWith(
-      projectPath,
-      '.acme-code',
-      mcpServers,
-      {
-        claudeCodeGlobal: false,
-        codexGlobal: false,
-      },
-      { onEvent: expect.any(Function) },
-    );
+    expect(createMcpManagerMock).toHaveBeenCalledWith(projectPath, '.acme-code', mcpServers, {
+      claudeCodeGlobal: false,
+      codexGlobal: false,
+    });
   });
 
   it('passes persisted external MCP discovery opt-ins into the startup manager', async () => {
@@ -1888,16 +1870,10 @@ describe('createMastraCode', () => {
 
     await createMastraCode();
 
-    expect(createMcpManagerMock).toHaveBeenCalledWith(
-      expect.any(String),
-      '.mastracode',
-      undefined,
-      {
-        claudeCodeGlobal: true,
-        codexGlobal: true,
-      },
-      { onEvent: expect.any(Function) },
-    );
+    expect(createMcpManagerMock).toHaveBeenCalledWith(expect.any(String), '.mastracode', undefined, {
+      claudeCodeGlobal: true,
+      codexGlobal: true,
+    });
   });
 
   it('rejects cross-process PubSub mode without a PubSub instance', async () => {

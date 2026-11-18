@@ -7,15 +7,7 @@
  * A stdio-based MCP server configuration entry.
  * Launches a local process that communicates via stdin/stdout.
  */
-interface McpServerEventsConfig {
-  /**
-   * Opt-in MCP Events (SEP-3415, experimental): `true` subscribes to every event the server offers,
-   * a list subscribes to those names. Each occurrence is sent to the active thread as a signal.
-   */
-  events?: true | string[];
-}
-
-export interface McpStdioServerConfig extends McpServerEventsConfig {
+export interface McpStdioServerConfig {
   /** The command to launch the MCP server process */
   command: string;
   /** Arguments for the command */
@@ -30,7 +22,7 @@ export interface McpStdioServerConfig extends McpServerEventsConfig {
  * An HTTP-based MCP server configuration entry.
  * Connects to a remote server via Streamable HTTP or SSE.
  */
-export interface McpHttpServerConfig extends McpServerEventsConfig {
+export interface McpHttpServerConfig {
   /** The URL of the remote MCP server endpoint */
   url: string;
   /** Optional HTTP headers (e.g. for authentication) */

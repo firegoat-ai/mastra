@@ -108,21 +108,6 @@ describe('validateConfig', () => {
     expect(result.skippedServers).toBeUndefined();
   });
 
-  it('keeps opted-in events and skips servers with an invalid events value', () => {
-    const result = validateConfig({
-      mcpServers: {
-        all: { command: 'npx', events: true },
-        some: { url: 'https://example.com/mcp', events: ['push'] },
-        bad: { command: 'npx', events: 'push' },
-      },
-    });
-    expect(result.mcpServers?.all).toMatchObject({ events: true });
-    expect(result.mcpServers?.some).toMatchObject({ events: ['push'] });
-    expect(result.skippedServers).toEqual([
-      { name: 'bad', reason: 'Invalid events config: expected true or a non-empty array of event names' },
-    ]);
-  });
-
   it('accepts http server entry', () => {
     const result = validateConfig({
       mcpServers: {

@@ -593,30 +593,6 @@ describe('createMcpManager', () => {
       onToolsChanged!();
       await vi.waitFor(() => expect(Object.keys(manager.getTools())).toEqual(['fs_read', 'fs_write']));
     });
-
-    it('forwards occurrences of opted-in events to onEvent', async () => {
-      setupConfig({ mcpServers: { gh: { command: 'npx', events: ['push'] } } });
-      const occurrence = { eventId: 'e1', name: 'push', timestamp: '2026-01-01T00:00:00Z', data: { ref: 'main' } };
-      const subscribe = vi.fn().mockResolvedValue({
-        onError: vi.fn(),
-        cancel: vi.fn(),
-        async *[Symbol.asyncIterator]() {
-          yield occurrence;
-        },
-      });
-      MockedMCPClient.mockImplementation(function (this: any) {
-        this.listToolsetsWithErrors = vi.fn().mockResolvedValue({ toolsets: { gh: { ping: {} } }, errors: {} });
-        this.events = { list: vi.fn().mockResolvedValue([{ name: 'push' }, { name: 'issue' }]), subscribe };
-      } as any);
-      const onEvent = vi.fn().mockResolvedValue(undefined);
-
-      const manager = createMcpManager('/tmp/test', undefined, undefined, undefined, { onEvent });
-      await manager.init();
-
-      await vi.waitFor(() => expect(onEvent).toHaveBeenCalledWith('gh', occurrence));
-      expect(subscribe).toHaveBeenCalledTimes(1);
-      expect(subscribe).toHaveBeenCalledWith('gh', 'push');
-    });
   });
 
   describe('server statuses include transport', () => {

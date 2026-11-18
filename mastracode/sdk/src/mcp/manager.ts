@@ -7,8 +7,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { dirname, join } from 'node:path';
 import type {
   MCPClient,
-  MCPEventOccurrence,
-  MCPEventSubscription,
   MCPServerSettledResult,
   MastraMCPServerDefinition,
   OAuthClientInformation,
@@ -128,6 +126,8 @@ export interface McpManager {
   getConfig(): McpConfig;
   /** Get captured stderr logs for a server. */
   getServerLogs(name: string): string[];
+  /** MCP Events (SEP-3415) of the live client. Throws before the first connect. */
+  readonly events: MCPClient['events'];
 }
 
 function getTransport(cfg: McpServerConfig): 'stdio' | 'http' {
@@ -227,11 +227,7 @@ export function createMcpManager(
   configDirName = DEFAULT_CONFIG_DIR,
   extraServers?: Record<string, McpServerConfig>,
   externalDiscovery?: ExternalMcpDiscoveryOptions,
-  options?: {
-    discoveryTimeoutMs?: number;
-    /** Receives each occurrence from servers that opt in with `events`. */
-    onEvent?: (serverName: string, occurrence: MCPEventOccurrence) => Promise<void>;
-  },
+  options?: { discoveryTimeoutMs?: number },
 ): McpManager {
   const discoveryTimeoutMs = options?.discoveryTimeoutMs ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS;
   /** Merge programmatic servers into a base config (highest priority). */
@@ -488,14 +484,7 @@ export function createMcpManager(
     return status;
   }
 
-  const eventSubscriptions = new Map<string, MCPEventSubscription[]>();
-
-  function cancelEventSubscriptions(name: string): void {
-    for (const subscription of eventSubscriptions.get(name) ?? []) void subscription.cancel();
-    eventSubscriptions.delete(name);
-  }
-
-  /** Apply a connect outcome and, once connected, follow the server's tool list and opted-in events. */
+  /** Apply a connect outcome and, once connected, follow the server's tool list. */
   function applyAndWatch(
     name: string,
     cfg: McpServerConfig,
@@ -517,37 +506,7 @@ export function createMcpManager(
     attemptClient.tools
       .onListChanged(name, () => void refreshTools().catch(warn('failed to refresh tools')))
       .catch(warn('failed to watch tool list changes'));
-
-    cancelEventSubscriptions(name);
-    if (cfg.events) subscribeToEvents(name, cfg.events, attemptClient).catch(warn('failed to subscribe to events'));
     return status;
-  }
-
-  async function subscribeToEvents(name: string, wanted: true | string[], attemptClient: MCPClient): Promise<void> {
-    const onEvent = options?.onEvent;
-    if (!onEvent) throw new Error('"events" is set but this Mastra Code host has no MCP event handler');
-    const subscriptions: MCPEventSubscription[] = [];
-    eventSubscriptions.set(name, subscriptions);
-
-    const offered = (await attemptClient.events.list(name)).map(descriptor => descriptor.name);
-    const missing = wanted === true ? [] : wanted.filter(event => !offered.includes(event));
-    if (missing.length > 0) {
-      throw new Error(`server does not offer events ${missing.join(', ')} (offers: ${offered.join(', ') || 'none'})`);
-    }
-
-    for (const event of wanted === true ? offered : wanted) {
-      const subscription = await attemptClient.events.subscribe(name, event);
-      if (eventSubscriptions.get(name) !== subscriptions) return void subscription.cancel();
-      subscriptions.push(subscription);
-      subscription.onError(error => console.warn(`MCP server "${name}" event "${event}":`, error.message));
-      void (async () => {
-        for await (const occurrence of subscription) {
-          await onEvent(name, occurrence).catch(error =>
-            console.warn(`MCP server "${name}": failed to deliver event "${event}" (${occurrence.eventId}):`, error),
-          );
-        }
-      })().catch(error => console.warn(`MCP server "${name}": event "${event}" subscription ended:`, error));
-    }
   }
 
   async function connectAndCollectTools(): Promise<void> {
@@ -658,8 +617,8 @@ export function createMcpManager(
     const attempt = {};
     connectAttempts.set(name, attempt);
 
+    // Remove old tools for this server
     removeServerTools(name);
-    cancelEventSubscriptions(name);
 
     // Clear old logs and mark as connecting
     stderrLogs.delete(name);
@@ -719,7 +678,6 @@ export function createMcpManager(
 
   async function disconnect(): Promise<void> {
     connectAttempts = new Map();
-    for (const name of [...eventSubscriptions.keys()]) cancelEventSubscriptions(name);
     if (client) {
       const closing = client;
       client = null;
@@ -1064,6 +1022,11 @@ export function createMcpManager(
     },
 
     disconnect,
+
+    get events() {
+      if (!client) throw new Error('MCP client not initialized: MCP events are unavailable until servers connect');
+      return client.events;
+    },
 
     getTools() {
       // Servers settle in any order; return tools in config order so the model sees a stable tool list.
