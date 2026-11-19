@@ -1,0 +1,51 @@
+{
+ "name": "@mastra/core",
+ "dist-tags": {
+  "latest": "1.85.0-agentpack.1"
+ },
+ "versions": {
+  "1.85.0-agentpack.1": {
+   "name": "@mastra/core",
+   "version": "1.85.0-agentpack.1",
+   "description": "EXPERIMENT (beads-cc8v): Agent + tools + Mastra from @mastra/core 1.85.0, bundled into one file tree. Not an official Mastra release.",
+   "license": "Apache-2.0",
+   "type": "module",
+   "main": "dist/index.js",
+   "types": "types/index.d.ts",
+   "exports": {
+    ".": {
+     "types": "./types/index.d.ts",
+     "default": "./dist/index.js"
+    },
+    "./agent": {
+     "types": "./types/agent/index.d.ts",
+     "default": "./dist/agent.js"
+    },
+    "./tools": {
+     "types": "./types/tools/index.d.ts",
+     "default": "./dist/tools.js"
+    },
+    "./package.json": "./package.json"
+   },
+   "files": [
+    "dist",
+    "types"
+   ],
+   "engines": {
+    "node": ">=22.13.0"
+   },
+   "dependencies": {
+    "undici": "^6.28.0"
+   },
+   "peerDependencies": {
+    "zod": "^3.25.0 || ^4.0.0"
+   },
+   "_id": "@mastra/core@1.85.0-agentpack.1",
+   "dist": {
+    "tarball": "https://github.com/firegoat-ai/mastra/releases/download/mastra-core-1.85.0-slim/mastra-core-1.85.0-agentpack.1.tgz",
+    "integrity": "sha512-muHubv+w9qzsbaETOncHPtkBmgbwQGMJlCGqEFBYDmm6v5c4wniHJjfT8oTqOJAFfLzj43KSLfUaZYGFa1Hz5w==",
+    "shasum": "33ebae61aadcc591add428bcf858b31fd8f8f4f8"
+   }
+  }
+ }
+}
