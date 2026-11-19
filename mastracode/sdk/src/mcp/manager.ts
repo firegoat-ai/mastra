@@ -126,6 +126,8 @@ export interface McpManager {
   getConfig(): McpConfig;
   /** Get captured stderr logs for a server. */
   getServerLogs(name: string): string[];
+  /** MCP Events (SEP-3415) of the live client. Throws before the first connect. */
+  readonly events: MCPClient['events'];
 }
 
 function getTransport(cfg: McpServerConfig): 'stdio' | 'http' {
@@ -482,6 +484,31 @@ export function createMcpManager(
     return status;
   }
 
+  /** Apply a connect outcome and, once connected, follow the server's tool list. */
+  function applyAndWatch(
+    name: string,
+    cfg: McpServerConfig,
+    outcome: ServerOutcome,
+    attempt: object,
+    attemptClient: MCPClient,
+  ): McpServerStatus {
+    const status = applyServerResult(name, cfg, outcome);
+    if (!status.connected) return status;
+
+    const refreshTools = () =>
+      attemptClient.listToolsetsWithErrors({
+        serverNames: [name],
+        onServerSettled: (_, result) => {
+          if (isCurrent(name, attempt, attemptClient)) applyServerResult(name, cfg, outcomeOf(result));
+        },
+      });
+    const warn = (what: string) => (error: unknown) => console.warn(`MCP server "${name}": ${what}:`, error);
+    attemptClient.tools
+      .onListChanged(name, () => void refreshTools().catch(warn('failed to refresh tools')))
+      .catch(warn('failed to watch tool list changes'));
+    return status;
+  }
+
   async function connectAndCollectTools(): Promise<void> {
     setDisabledStatuses();
 
@@ -518,7 +545,7 @@ export function createMcpManager(
     const record = (name: string, outcome: ServerOutcome): boolean => {
       if (!isCurrent(name, attempts.get(name)!, attemptClient)) return false;
       captureStderr(name);
-      applyServerResult(name, servers[name]!, outcome);
+      applyAndWatch(name, servers[name]!, outcome, attempts.get(name)!, attemptClient);
       return true;
     };
 
@@ -619,7 +646,7 @@ export function createMcpManager(
     })().catch((error): ServerOutcome => ({ error: error instanceof Error ? error.message : String(error) }));
 
     const record = (outcome: ServerOutcome): McpServerStatus | undefined =>
-      isCurrent(name, attempt, attemptClient) ? applyServerResult(name, cfg, outcome) : undefined;
+      isCurrent(name, attempt, attemptClient) ? applyAndWatch(name, cfg, outcome, attempt, attemptClient) : undefined;
     const superseded = (): McpServerStatus => ({
       ...(serverStatuses.get(name) ?? {
         name,
@@ -995,6 +1022,11 @@ export function createMcpManager(
     },
 
     disconnect,
+
+    get events() {
+      if (!client) throw new Error('MCP client not initialized: MCP events are unavailable until servers connect');
+      return client.events;
+    },
 
     getTools() {
       // Servers settle in any order; return tools in config order so the model sees a stable tool list.

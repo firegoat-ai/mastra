@@ -46,6 +46,7 @@ vi.mock('@mastra/mcp', () => {
 
   const MCPClient = function (this: any, ...args: any[]) {
     mcpMocks.MCPClient.apply(this, args);
+    this.tools ??= { onListChanged: vi.fn().mockResolvedValue(undefined) };
     let listing = this.listToolsetsWithErrors && settling(this.listToolsetsWithErrors);
     Object.defineProperty(this, 'listToolsetsWithErrors', {
       get: () => listing,
@@ -567,6 +568,30 @@ describe('createMcpManager', () => {
       expect(result.totalTools).toBe(1);
       // listToolsetsWithErrors should only have been called once (from init, not again from initInBackground)
       expect(mockListToolsetsWithErrors).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('server notifications', () => {
+    it("re-lists a server's tools when it announces a tool list change", async () => {
+      setupConfig({ mcpServers: { fs: { command: 'npx' } } });
+      let onToolsChanged: (() => void) | undefined;
+      const listing = vi
+        .fn()
+        .mockResolvedValueOnce({ toolsets: { fs: { read: {} } }, errors: {} })
+        .mockResolvedValue({ toolsets: { fs: { read: {}, write: {} } }, errors: {} });
+      MockedMCPClient.mockImplementation(function (this: any) {
+        this.listToolsetsWithErrors = listing;
+        this.tools = {
+          onListChanged: vi.fn(async (_: string, handler: () => void) => void (onToolsChanged = handler)),
+        };
+      } as any);
+
+      const manager = createMcpManager('/tmp/test');
+      await manager.init();
+      expect(Object.keys(manager.getTools())).toEqual(['fs_read']);
+
+      onToolsChanged!();
+      await vi.waitFor(() => expect(Object.keys(manager.getTools())).toEqual(['fs_read', 'fs_write']));
     });
   });
 

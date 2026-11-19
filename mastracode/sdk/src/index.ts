@@ -1320,6 +1320,10 @@ export async function createMastraCodeAgentController(config?: MastraCodeConfig)
     const enabledTaskTools = Object.fromEntries(taskTools.filter(([id]) => !disabledBuiltinTools.has(id)));
     taskSignalProvider.getTools = () => enabledTaskTools;
   }
+  // `@mastra/mcp` loads lazily, so only sessions with MCP servers pay for it here.
+  const mcpEventsSignalProvider = mcpManager?.hasServers()
+    ? new (await import('@mastra/mcp')).MCPEventsSignalProvider({ client: mcpManager, tools: true })
+    : undefined;
   const agentConnectionsSignalProvider = useCrossAgentSignals
     ? new AgentConnectionsSignalProvider(config?.agentConnections)
     : undefined;
@@ -1337,6 +1341,7 @@ export async function createMastraCodeAgentController(config?: MastraCodeConfig)
     ? new PluginSignalLane({
         reservedProviderIds: [
           taskSignalProvider.id,
+          ...(mcpEventsSignalProvider ? [mcpEventsSignalProvider.id] : []),
           ...(agentConnectionsSignalProvider ? [agentConnectionsSignalProvider.id] : []),
           ...(githubSignals ? [githubSignals.id] : []),
         ],
@@ -1505,6 +1510,7 @@ export async function createMastraCodeAgentController(config?: MastraCodeConfig)
     // so the task list persists across turns and survives OM truncation.
     signals: [
       taskSignalProvider,
+      ...(mcpEventsSignalProvider ? [mcpEventsSignalProvider] : []),
       ...(agentConnectionsSignalProvider ? [agentConnectionsSignalProvider] : []),
       ...(githubSignals ? [githubSignals] : []),
     ],
